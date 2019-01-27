@@ -4,32 +4,79 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <netinet/in.h> 
+#include <arpa/inet.h>
+#include <string.h>
 
+typedef int (*orig_connect_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
-typedef void * (*orig_malloc_type)(size_t size);
-typedef void (*orig_free_type)(void *ptr);
+struct fd_addr_entry{
+	char *addr;
+	int fd;
+};
 
-static size_t jonas_count = 0;
+static int fd_addr_size = 0;
+static struct fd_addr_entry **mappings = NULL;
 
-static int just_malloc = 0;
+void add(struct sockaddr_in* addr, int fd){
+	int offset;
 
-void *malloc(size_t size){
-	if(!just_malloc){
-		just_malloc = 1;
-		printf("MALLOC [%d]\n", size);
-		just_malloc = 0;
-	}else{
-		jonas_count += size;
+	struct sockaddr_in *sin;
+	sin = (struct sockaddr_in *) addr;
+	char *result = inet_ntoa(sin->sin_addr);
+	
+	char* addrstr_buffer = malloc(strlen(result));
+	strcpy(addrstr_buffer, result);
+
+	for(int i=0;i<fd_addr_size;i++){
+		offset = sizeof(struct fd_addr_entry) * i;
+		if(mappings[offset]->fd == fd){
+			//fd already available, just update the addr
+			free(mappings[offset]->addr);
+			mappings[offset]->addr = addrstr_buffer;
+			return;
+		}
 	}
-	orig_malloc_type orig_malloc;
-	orig_malloc = (orig_malloc_type)dlsym(RTLD_NEXT, "malloc");
-	return orig_malloc(size);
+
+	//if we're here, that means no fd is available --> create a new one
+	
+	//increase array
+	mappings = realloc(mappings, sizeof(struct fd_addr_entry)* (fd_addr_size+1));
+
+	//create a new entry
+	struct fd_addr_entry *new_entry =  malloc(sizeof(struct fd_addr_entry));
+
+	//setup everything and assign it to the end of the list
+	new_entry->fd = fd;
+	new_entry->addr = addrstr_buffer;
+	mappings[fd_addr_size] = new_entry;
+
+	fd_addr_size++; //increase size
 }
 
-void free(void *ptr){
-//	printf("[FREE] %d\n", jonas_count);
-	orig_free_type orig_free;
-	orig_free = (orig_free_type)dlsym(RTLD_NEXT, "free");
-	return orig_free(ptr);
+char* get(int fd){
+	for(int i=0;i<fd_addr_size;i++){
+		int offset = sizeof(struct fd_addr_entry) * i;
+		if(mappings[offset]->fd == fd){
+			return mappings[offset]->addr;
+		}
+	}
+	return NULL;
+}
+
+
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+	struct sockaddr_in *sin;
+	sin = (struct sockaddr_in *) addr;
+	add(sin, sockfd);
+	char* test_addr = get(sockfd);
+	if(test_addr != NULL){
+		printf("[%d] %s\n", sockfd, test_addr);
+	}
+
+	orig_connect_type orig_connect;
+	orig_connect = (orig_connect_type) dlsym(RTLD_NEXT, "connect");
+	return orig_connect(sockfd, addr, addrlen);
+
 }
 
