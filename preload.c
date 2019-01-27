@@ -23,6 +23,7 @@ struct fd_addr_entry{
 
 static int fd_addr_size = 0;
 static struct fd_addr_entry **mappings = NULL;
+static int init_status = 0;
 
 // try to get the offset in **mappings for the fd, return -1 if nothings found
 int get_offset(int fd){
@@ -81,7 +82,13 @@ char* get(int fd){
 	mappings[offset]->addr;
 }
 
-
+void init(){
+	if(init_status){
+		return;
+	}
+	init_status = 1;
+	printf("INIT");
+}
 
 void new_data(int fd, size_t count, int data_type){
 	int offset = get_offset(fd);
@@ -100,6 +107,7 @@ void new_data(int fd, size_t count, int data_type){
 
 // connect systemcall replacement
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+	init();
 	struct sockaddr_in *sin;
 	sin = (struct sockaddr_in *) addr;
 	add(sin, sockfd);
@@ -120,6 +128,7 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
 typedef size_t (*orig_write_type)(int fd, const void *buf, size_t count);
 
 size_t write(int fd, const void *buf, size_t count){
+	init();
 	new_data(fd, count, DATA_WRITE);
 	orig_write_type orig_write;
 	orig_write = (orig_write_type) dlsym(RTLD_NEXT, "write");
@@ -130,6 +139,7 @@ size_t write(int fd, const void *buf, size_t count){
 typedef ssize_t (*orig_read_type)(int fd, void *buf, size_t count);
 
 ssize_t read(int fd, void *buf, size_t count){
+	init();
 	new_data(fd, count, DATA_READ);
 	orig_read_type orig_read;
 	orig_read = (orig_read_type) dlsym(RTLD_NEXT, "read");
