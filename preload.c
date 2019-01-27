@@ -15,6 +15,7 @@ typedef int (*orig_connect_type)(int sockfd, const struct sockaddr *addr, sockle
 
 struct fd_addr_entry{
 	char *addr;
+	int port;
 	int fd;
 	size_t write_total;
 	size_t read_total;
@@ -46,6 +47,7 @@ void add(struct sockaddr_in* addr, int fd){
 		//fd already available, just update the addr
 		free(mappings[offset]->addr);
 		mappings[offset]->addr = addrstr_buffer;
+		mappings[offset]->port = ntohs(sin->sin_port);
 		mappings[offset]->write_total = 0; //reset counters
 		mappings[offset]->read_total = 0;
 		return;
@@ -62,6 +64,7 @@ void add(struct sockaddr_in* addr, int fd){
 	//setup everything and assign it to the end of the list
 	new_entry->fd = fd;
 	new_entry->addr = addrstr_buffer;
+	new_entry->port = ntohs(sin->sin_port);
 	new_entry->write_total = 0;
 	new_entry->read_total = 0;
 
@@ -91,7 +94,7 @@ void new_data(int fd, size_t count, int data_type){
 	}else if(data_type == DATA_WRITE){
 		mappings[offset]->write_total+=count; //add new byte size to total count
 	}
-	printf("[%s] R: %d W: %d\n", mappings[offset]->addr, mappings[offset]->read_total, mappings[offset]->write_total);
+	printf("%s %d %d %d\n", mappings[offset]->addr, mappings[offset]->port, mappings[offset]->read_total, mappings[offset]->write_total);
 }
 
 
